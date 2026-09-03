@@ -1,0 +1,47 @@
+[
+  {
+    "bookSourceName": "番茄小说·公开网页版代理 v1.0",
+    "bookSourceGroup": "学习测试",
+    "bookSourceUrl": "https://fanqie-legado-source.onrender.com",
+    "bookSourceType": 0,
+    "bookSourceComment": "仅整理番茄公开网页正常可访问的数据；不绕过登录、会员、付费限制，不解密字体混淆。Render 免费实例休眠后首次请求可能较慢。",
+    "enabled": true,
+    "enabledExplore": false,
+    "enabledCookieJar": true,
+    "searchUrl": "https://fanqie-legado-source.onrender.com/search?q={{key}}",
+    "ruleSearch": {
+      "bookList": "$.books[*]",
+      "name": "$.name",
+      "author": "",
+      "intro": "",
+      "kind": "",
+      "lastChapter": "",
+      "bookUrl": "$.bookUrl",
+      "coverUrl": ""
+    },
+    "ruleBookInfo": {
+      "name": "$.name",
+      "author": "$.author",
+      "intro": "$.intro",
+      "kind": "",
+      "lastChapter": "$.chapters[-1].name",
+      "coverUrl": "$.coverUrl",
+      "tocUrl": "$.tocUrl"
+    },
+    "ruleToc": {
+      "chapterList": "$.chapters[*]",
+      "chapterName": "$.name",
+      "chapterUrl": "$.url",
+      "isVip": "",
+      "isVolume": "",
+      "updateTime": ""
+    },
+    "ruleContent": {
+      "content": "$.content",
+      "nextContentUrl": "",
+      "replaceRegex": ""
+    },
+    "respondTime": 180000,
+    "weight": 0
+  }
+]
