@@ -17,6 +17,8 @@
 
 Render 免费实例在长时间无访问后会休眠，首次请求可能需要几十秒唤醒。
 
+搜索请求有 35 秒总超时，并在响应中附带 `requestId` 和分阶段诊断信息。若番茄公开搜索接口要求滑块等交互式验证，服务会返回明确的 `503 fanqie_public_search_verification_required`，不会尝试绕过；若页面一直停留在加载状态，则返回 `504 fanqie_search_results_timeout`，不会无限挂起。
+
 ## Legado 书源
 
 已生成可直接导入的书源：
