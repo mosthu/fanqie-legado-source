@@ -17,7 +17,7 @@
 
 Render 免费实例在长时间无访问后会休眠，首次请求可能需要几十秒唤醒。
 
-搜索请求有 35 秒总超时，并在响应中附带 `requestId` 和分阶段诊断信息。若番茄公开搜索接口要求滑块等交互式验证，服务会返回明确的 `503 fanqie_public_search_verification_required`，不会尝试绕过；若页面一直停留在加载状态，则返回 `504 fanqie_search_results_timeout`，不会无限挂起。
+搜索直接调用番茄搜索页自身使用的公开 JSON 接口，不再为每次搜索启动 Chromium；响应附带 `requestId`、耗时和上游状态。若番茄要求滑块等交互式验证，服务会返回明确的 `503 fanqie_public_search_verification_required`，不会尝试绕过，也不会无限挂起或拖垮 Render 实例。
 
 ## Legado 书源
 
