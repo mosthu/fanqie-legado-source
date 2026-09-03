@@ -1,0 +1,47 @@
+[
+  {
+    "bookSourceName": "番茄小说·公开网页有限版 v1.1",
+    "bookSourceGroup": "公开网页·有限版",
+    "bookSourceUrl": "https://fanqie-legado-source.onrender.com",
+    "bookSourceType": 0,
+    "bookSourceComment": "推荐在搜索框粘贴 https://fanqienovel.com/page/数字 或纯数字书籍ID。普通书名搜索可能被番茄交互验证拦截。只读取公开网页；不绕过登录、会员、付费、验证或字体保护。",
+    "enabled": true,
+    "enabledExplore": false,
+    "enabledCookieJar": true,
+    "searchUrl": "https://fanqie-legado-source.onrender.com/search?q={{key}}",
+    "ruleSearch": {
+      "bookList": "$.books[*]",
+      "name": "$.name",
+      "author": "",
+      "intro": "",
+      "kind": "",
+      "lastChapter": "",
+      "bookUrl": "$.bookUrl",
+      "coverUrl": ""
+    },
+    "ruleBookInfo": {
+      "name": "$.name",
+      "author": "$.author",
+      "intro": "$.intro",
+      "kind": "",
+      "lastChapter": "$.chapters[-1].name",
+      "coverUrl": "$.coverUrl",
+      "tocUrl": "$.tocUrl"
+    },
+    "ruleToc": {
+      "chapterList": "$.chapters[*]",
+      "chapterName": "$.name",
+      "chapterUrl": "$.url",
+      "isVip": "",
+      "isVolume": "",
+      "updateTime": ""
+    },
+    "ruleContent": {
+      "content": "$.content",
+      "nextContentUrl": "",
+      "replaceRegex": ""
+    },
+    "respondTime": 30000,
+    "weight": 0
+  }
+]
