@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: fanqie-legado-source
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
