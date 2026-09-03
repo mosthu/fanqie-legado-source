@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from urllib.parse import quote, urljoin, urlparse
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 
 BASE = "https://fanqienovel.com"
@@ -27,13 +27,17 @@ def _allowed_url(value: str, prefixes: tuple[str, ...]) -> str:
 
 
 def _has_private_use_chars(text: str) -> bool:
-    # Unicode Private Use Areas often appear in obfuscated page text.
     return any(
         ("\uE000" <= ch <= "\uF8FF")
         or ("\U000F0000" <= ch <= "\U000FFFFD")
         or ("\U00100000" <= ch <= "\U0010FFFD")
         for ch in text
     )
+
+
+def _api_url(request: Request, path: str, target: str) -> str:
+    base = str(request.base_url).rstrip("/")
+    return f"{base}{path}?url={quote(target, safe='')}"
 
 
 async def _new_page(playwright):
@@ -49,7 +53,7 @@ async def health():
 
 
 @app.get("/search")
-async def search(q: str = Query(min_length=1, max_length=80)):
+async def search(request: Request, q: str = Query(min_length=1, max_length=80)):
     url = f"{BASE}/search/{quote(q.strip())}"
     try:
         async with async_playwright() as p:
@@ -65,21 +69,24 @@ async def search(q: str = Query(min_length=1, max_length=80)):
     except PlaywrightTimeoutError:
         raise HTTPException(504, "Fanqie search page timed out")
 
-    out = []
-    seen = set()
+    out, seen = [], set()
     for row in rows:
         href = row.get("href") or ""
         name = re.sub(r"\s+", " ", row.get("name") or "").strip()
         if "/page/" not in href or not name or href in seen:
             continue
         seen.add(href)
-        out.append({"name": name, "bookUrl": href})
+        out.append({
+            "name": name,
+            "bookUrl": _api_url(request, "/info", href),
+            "sourceUrl": href,
+        })
 
     return {"query": q, "count": len(out), "books": out[:30]}
 
 
 @app.get("/info")
-async def info(url: str):
+async def info(request: Request, url: str):
     url = _allowed_url(url, ("/page/",))
     try:
         async with async_playwright() as p:
@@ -92,7 +99,6 @@ async def info(url: str):
                     return page.locator(selector).first
 
                 title = (await one("h1").inner_text()).strip() if await one("h1").count() else ""
-
                 author = ""
                 for selector in [".author-name-text", ".author-name", "[class*='author-name']"]:
                     loc = one(selector)
@@ -126,22 +132,28 @@ async def info(url: str):
     except PlaywrightTimeoutError:
         raise HTTPException(504, "Fanqie detail page timed out")
 
-    chapters = []
-    seen = set()
+    chapters, seen = [], set()
     for row in chapters_raw:
         href = row.get("href") or ""
         name = re.sub(r"\s+", " ", row.get("name") or "").strip()
         if "/reader/" not in href or not name or href in seen:
             continue
         seen.add(href)
-        chapters.append({"name": name, "url": href})
+        chapters.append({
+            "name": name,
+            "url": _api_url(request, "/content", href),
+            "sourceUrl": href,
+        })
 
+    current_api_url = _api_url(request, "/info", url)
     return {
         "name": title,
         "author": author,
         "intro": intro,
         "coverUrl": cover,
-        "bookUrl": url,
+        "bookUrl": current_api_url,
+        "tocUrl": current_api_url,
+        "sourceUrl": url,
         "chapterCount": len(chapters),
         "chapters": chapters,
     }
@@ -168,10 +180,6 @@ async def content(url: str):
     if not text:
         return {"readable": False, "reason": "empty_public_content", "content": ""}
     if _has_private_use_chars(text):
-        return {
-            "readable": False,
-            "reason": "obfuscated_private_use_characters",
-            "content": "",
-        }
+        return {"readable": False, "reason": "obfuscated_private_use_characters", "content": ""}
 
     return {"readable": True, "reason": None, "content": text}
