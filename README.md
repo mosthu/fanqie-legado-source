@@ -21,9 +21,15 @@ Render 免费实例在长时间无访问后会休眠，首次请求可能需要�
 
 ## Legado 书源
 
-已生成可直接导入的书源：
+推荐通过网络导入有限版书源：
 
-- `legado/fanqie-public-v1.0.json`
+- `https://fanqie-legado-source.onrender.com/source.json`
+
+在搜索框中粘贴番茄书籍公开页面链接（`https://fanqienovel.com/page/数字`）或纯数字书籍 ID。普通书名搜索受番茄交互验证限制，可能不可用。
+
+仓库内书源文件：
+
+- `legado/fanqie-public-v1.1.json`
 
 也可以使用模板：
 

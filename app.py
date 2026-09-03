@@ -6,9 +6,11 @@ import logging
 import re
 import time
 import uuid
+from pathlib import Path
 from urllib.parse import quote, urlencode, urljoin, urlparse
 from urllib.request import Request as UrlRequest, urlopen
 
+from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException, Query, Request
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 
@@ -18,13 +20,14 @@ UA = (
     "(KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
 )
 
-app = FastAPI(title="Fanqie Public Web -> Legado", version="0.3.0")
+app = FastAPI(title="Fanqie Public Web -> Legado", version="0.4.0")
 log = logging.getLogger("fanqie")
 
 NAVIGATION_TIMEOUT_MS = 15_000
 SEARCH_RESULTS_TIMEOUT_MS = 12_000
 ENDPOINT_TIMEOUT_SECONDS = 35
 SEARCH_API_TIMEOUT_SECONDS = 15
+SOURCE_FILE = Path(__file__).parent / "legado" / "fanqie-public-v1.1.json"
 
 
 def _allowed_url(value: str, prefixes: tuple[str, ...]) -> str:
@@ -80,6 +83,47 @@ def _consume_task_result(task: asyncio.Task) -> None:
         task.result()
     except (asyncio.CancelledError, Exception):
         pass
+
+
+def _book_id_from_query(query: str) -> str | None:
+    query = query.strip()
+    if re.fullmatch(r"\d{10,24}", query):
+        return query
+    match = re.search(r"https?://(?:www\.)?fanqienovel\.com/page/(\d{10,24})", query)
+    return match.group(1) if match else None
+
+
+def _fetch_public_html_sync(url: str) -> str:
+    req = UrlRequest(url, headers={
+        "User-Agent": UA,
+        "Accept": "text/html,application/xhtml+xml",
+    })
+    with urlopen(req, timeout=SEARCH_API_TIMEOUT_SECONDS) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+async def _direct_book_result(request: Request, book_id: str):
+    source_url = f"{BASE}/page/{book_id}"
+    try:
+        html = await asyncio.wait_for(
+            asyncio.to_thread(_fetch_public_html_sync, source_url),
+            timeout=SEARCH_API_TIMEOUT_SECONDS + 2,
+        )
+        soup = BeautifulSoup(html, "html.parser")
+        title_node = soup.select_one("h1")
+        name = title_node.get_text(" ", strip=True) if title_node else f"番茄书籍 {book_id}"
+    except Exception:
+        name = f"番茄书籍 {book_id}"
+    return {
+        "query": book_id,
+        "count": 1,
+        "books": [{
+            "name": name,
+            "bookUrl": _api_url(request, "/info", source_url),
+            "sourceUrl": source_url,
+        }],
+        "mode": "direct_book_url",
+    }
 
 
 def _search_public_api_sync(query: str, request_id: str):
@@ -200,13 +244,23 @@ async def _search_with_browser(url: str, request_id: str):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "service": "fanqie-legado-source", "version": "0.3.0"}
+    return {"ok": True, "service": "fanqie-legado-source", "version": "0.4.0"}
+
+
+@app.get("/source.json")
+async def source_json():
+    if not SOURCE_FILE.exists():
+        raise HTTPException(404, "Legado source file not found")
+    return json.loads(SOURCE_FILE.read_text(encoding="utf-8"))
 
 
 @app.get("/search")
 async def search(request: Request, q: str = Query(min_length=1, max_length=80)):
     query = q.strip()
     request_id = uuid.uuid4().hex[:12]
+    book_id = _book_id_from_query(query)
+    if book_id:
+        return await _direct_book_result(request, book_id)
     try:
         rows, debug = await _search_public_api(query, request_id)
     except (TimeoutError, PlaywrightTimeoutError) as exc:
@@ -326,19 +380,19 @@ async def info(request: Request, url: str):
 async def content(url: str):
     url = _allowed_url(url, ("/reader/",))
     try:
-        async with async_playwright() as p:
-            browser, page = await _new_page(p)
-            try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                await page.wait_for_timeout(1200)
-                body = page.locator("div.muye-reader-content").first
-                if not await body.count():
-                    return {"readable": False, "reason": "public_content_container_not_found", "content": ""}
-                text = (await body.inner_text()).strip()
-            finally:
-                await browser.close()
-    except PlaywrightTimeoutError:
-        raise HTTPException(504, "Fanqie reader page timed out")
+        html = await asyncio.wait_for(
+            asyncio.to_thread(_fetch_public_html_sync, url),
+            timeout=SEARCH_API_TIMEOUT_SECONDS + 2,
+        )
+        soup = BeautifulSoup(html, "html.parser")
+        body = soup.select_one("div.muye-reader-content")
+        if body is None:
+            return {"readable": False, "reason": "public_content_container_not_found", "content": ""}
+        text = body.get_text("\n", strip=True)
+    except TimeoutError as exc:
+        raise HTTPException(504, "Fanqie reader page timed out") from exc
+    except Exception as exc:
+        raise HTTPException(502, "Fanqie reader page request failed") from exc
 
     if not text:
         return {"readable": False, "reason": "empty_public_content", "content": ""}
