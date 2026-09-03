@@ -71,6 +71,14 @@ async def _close_browser(browser, request_id: str) -> None:
         log.warning("request_id=%s stage=browser_close error=%r", request_id, exc)
 
 
+def _consume_task_result(task: asyncio.Task) -> None:
+    """Consume a cancelled background task without delaying the HTTP response."""
+    try:
+        task.result()
+    except (asyncio.CancelledError, Exception):
+        pass
+
+
 async def _search_with_browser(url: str, request_id: str):
     started = time.monotonic()
     browser = None
@@ -145,8 +153,13 @@ async def search(request: Request, q: str = Query(min_length=1, max_length=80)):
     request_id = uuid.uuid4().hex[:12]
     url = f"{BASE}/search/{quote(query)}"
     try:
-        async with asyncio.timeout(ENDPOINT_TIMEOUT_SECONDS):
-            rows, debug = await _search_with_browser(url, request_id)
+        task = asyncio.create_task(_search_with_browser(url, request_id))
+        done, _ = await asyncio.wait({task}, timeout=ENDPOINT_TIMEOUT_SECONDS)
+        if not done:
+            task.cancel()
+            task.add_done_callback(_consume_task_result)
+            raise TimeoutError
+        rows, debug = task.result()
     except (TimeoutError, PlaywrightTimeoutError) as exc:
         log.exception("request_id=%s stage=search outcome=timeout", request_id)
         raise HTTPException(504, {
