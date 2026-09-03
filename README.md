@@ -9,6 +9,24 @@
 - 不绕过登录、会员、付费或访问控制。
 - 不破解字体混淆/字符加密；若正文存在私用区字符，会返回 `readable=false`。
 
+## 已部署服务
+
+- Base URL: `https://fanqie-legado-source.onrender.com`
+- 健康检查: `https://fanqie-legado-source.onrender.com/health`
+- 搜索测试: `https://fanqie-legado-source.onrender.com/search?q=神通者`
+
+Render 免费实例在长时间无访问后会休眠，首次请求可能需要几十秒唤醒。
+
+## Legado 书源
+
+已生成可直接导入的书源：
+
+- `legado/fanqie-public-v1.0.json`
+
+也可以使用模板：
+
+- `legado/source.template.json`
+
 ## API
 
 - `GET /health`
@@ -30,5 +48,3 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 docker build -t fanqie-legado-source .
 docker run --rm -p 8000:8000 fanqie-legado-source
 ```
-
-部署后，把 `legado/source.template.json` 里的 `__BASE_URL__` 替换成你的服务地址即可导入阅读。
