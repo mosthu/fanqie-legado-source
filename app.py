@@ -19,8 +19,12 @@ UA = (
     "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
 )
+DESKTOP_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+)
 
-app = FastAPI(title="Fanqie Public Web -> Legado", version="0.4.0")
+app = FastAPI(title="Fanqie Public Web -> Legado", version="0.4.1")
 log = logging.getLogger("fanqie")
 
 NAVIGATION_TIMEOUT_MS = 15_000
@@ -95,7 +99,7 @@ def _book_id_from_query(query: str) -> str | None:
 
 def _fetch_public_html_sync(url: str) -> str:
     req = UrlRequest(url, headers={
-        "User-Agent": UA,
+        "User-Agent": DESKTOP_UA,
         "Accept": "text/html,application/xhtml+xml",
     })
     with urlopen(req, timeout=SEARCH_API_TIMEOUT_SECONDS) as response:
@@ -244,7 +248,7 @@ async def _search_with_browser(url: str, request_id: str):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "service": "fanqie-legado-source", "version": "0.4.0"}
+    return {"ok": True, "service": "fanqie-legado-source", "version": "0.4.1"}
 
 
 @app.get("/source.json")
