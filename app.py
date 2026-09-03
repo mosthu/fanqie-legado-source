@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
 import uuid
-from urllib.parse import quote, urljoin, urlparse
+from urllib.parse import quote, urlencode, urljoin, urlparse
+from urllib.request import Request as UrlRequest, urlopen
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
@@ -16,12 +18,13 @@ UA = (
     "(KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
 )
 
-app = FastAPI(title="Fanqie Public Web -> Legado", version="0.2.0")
+app = FastAPI(title="Fanqie Public Web -> Legado", version="0.3.0")
 log = logging.getLogger("fanqie")
 
 NAVIGATION_TIMEOUT_MS = 15_000
 SEARCH_RESULTS_TIMEOUT_MS = 12_000
 ENDPOINT_TIMEOUT_SECONDS = 35
+SEARCH_API_TIMEOUT_SECONDS = 15
 
 
 def _allowed_url(value: str, prefixes: tuple[str, ...]) -> str:
@@ -77,6 +80,59 @@ def _consume_task_result(task: asyncio.Task) -> None:
         task.result()
     except (asyncio.CancelledError, Exception):
         pass
+
+
+def _search_public_api_sync(query: str, request_id: str):
+    params = urlencode({
+        "filter": "",
+        "page_count": 30,
+        "page_index": 0,
+        "query_type": 0,
+        "query_word": query,
+    })
+    target = f"{BASE}/api/author/search/search_book/v1?{params}"
+    req = UrlRequest(target, headers={
+        "User-Agent": UA,
+        "Accept": "application/json, text/plain, */*",
+        "Referer": f"{BASE}/search/{quote(query)}",
+    })
+    started = time.monotonic()
+    with urlopen(req, timeout=SEARCH_API_TIMEOUT_SECONDS) as response:
+        body = response.read()
+        headers = {key.lower(): value for key, value in response.headers.items()}
+        status = response.status
+
+    blocked = bool(headers.get("bdturing-verify") or headers.get("x-vc-bdturing-parameters"))
+    debug = {
+        "requestId": request_id,
+        "elapsedMs": round((time.monotonic() - started) * 1000),
+        "searchApi": {"status": status, "blocked": blocked, "bytes": len(body)},
+    }
+    if blocked:
+        return [], debug
+    if not body:
+        raise RuntimeError("Fanqie search API returned an empty response")
+
+    payload = json.loads(body)
+    data = payload.get("data") or {}
+    raw_books = data.get("search_book_data_list") or []
+    rows = []
+    for book in raw_books:
+        book_id = str(book.get("book_id") or book.get("bookId") or "").strip()
+        name = book.get("book_name") or book.get("bookName") or ""
+        if isinstance(name, dict):
+            name = name.get("text") or name.get("str") or ""
+        name = re.sub(r"\s+", " ", str(name)).strip()
+        if book_id and name:
+            rows.append({"name": name, "href": f"{BASE}/page/{book_id}"})
+    return rows, debug
+
+
+async def _search_public_api(query: str, request_id: str):
+    return await asyncio.wait_for(
+        asyncio.to_thread(_search_public_api_sync, query, request_id),
+        timeout=SEARCH_API_TIMEOUT_SECONDS + 2,
+    )
 
 
 async def _search_with_browser(url: str, request_id: str):
@@ -144,22 +200,15 @@ async def _search_with_browser(url: str, request_id: str):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "service": "fanqie-legado-source", "version": "0.2.0"}
+    return {"ok": True, "service": "fanqie-legado-source", "version": "0.3.0"}
 
 
 @app.get("/search")
 async def search(request: Request, q: str = Query(min_length=1, max_length=80)):
     query = q.strip()
     request_id = uuid.uuid4().hex[:12]
-    url = f"{BASE}/search/{quote(query)}"
     try:
-        task = asyncio.create_task(_search_with_browser(url, request_id))
-        done, _ = await asyncio.wait({task}, timeout=ENDPOINT_TIMEOUT_SECONDS)
-        if not done:
-            task.cancel()
-            task.add_done_callback(_consume_task_result)
-            raise TimeoutError
-        rows, debug = task.result()
+        rows, debug = await _search_public_api(query, request_id)
     except (TimeoutError, PlaywrightTimeoutError) as exc:
         log.exception("request_id=%s stage=search outcome=timeout", request_id)
         raise HTTPException(504, {
@@ -177,19 +226,12 @@ async def search(request: Request, q: str = Query(min_length=1, max_length=80)):
             "errorType": type(exc).__name__,
         }) from exc
 
-    if not rows and debug["searchApi"]["blocked"]:
+    if debug["searchApi"]["blocked"]:
         raise HTTPException(503, {
             "code": "fanqie_public_search_verification_required",
             "message": "番茄公开搜索接口要求交互式验证，本服务不会绕过该限制",
             **debug,
         })
-    if not rows and debug["loading"]:
-        raise HTTPException(504, {
-            "code": "fanqie_search_results_timeout",
-            "message": "番茄公开搜索页持续处于加载状态",
-            **debug,
-        })
-
     out, seen = [], set()
     for row in rows:
         href = row.get("href") or ""
